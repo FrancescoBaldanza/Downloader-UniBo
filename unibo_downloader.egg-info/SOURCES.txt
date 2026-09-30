@@ -1,5 +1,4 @@
 README.md
-dlub.py
 main.py
 setup.py
 core/__init__.py
@@ -7,11 +6,17 @@ core/auth.py
 core/database.py
 core/downloader.py
 core/scheduler.py
+gui/__init__.py
+gui/app.py
+gui/course_dialog.py
+gui/login_dialog.py
+gui/main_window.py
+gui/schedule_widget.py
+gui/theme.py
 integrations/__init__.py
 integrations/notifications.py
 unibo_downloader.egg-info/PKG-INFO
 unibo_downloader.egg-info/SOURCES.txt
 unibo_downloader.egg-info/dependency_links.txt
-unibo_downloader.egg-info/entry_points.txt
 unibo_downloader.egg-info/requires.txt
 unibo_downloader.egg-info/top_level.txt

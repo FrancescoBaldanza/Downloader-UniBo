@@ -1,84 +1,45 @@
-# Downloader-UniBo (`dlub`)
+# UniBo Downloader
 
-Sei uno studente dell'Università di Bologna e vuoi sincronizzare una cartella della sul tuo pc con quella dei tuoi corsi su Virtuale?
-Puoi usare Downloader-UniBo per farlo in modo sicuro: i file scaricati non sono mai corrotti e **le le tue credenziali istituzionali non sono visibili a nessuno**.
-
-Inserisci le tue credenziali, definisci la cartella dove salvare le cartelle dei corsi, definisci i corsi e inifine sincronizza la cartella.
+Applicazione nativa macOS con interfaccia grafica moderna (PyQt6) per sincronizzare e organizzare automaticamente i materiali didattici dei corsi universitari da Virtuale (Moodle UniBo) sul tuo Mac.
 
 ---
 
-## Installazione
+## Funzionalita' Principali
 
-Per installarlo:
+- **Interfaccia Grafica Moderna**: Design pulito in perfetto stile macOS, con palette ufficiale dell'Universita' di Bologna.
+- **Autenticazione Sicura**: Gestione protetta delle credenziali istituzionali (`@studio.unibo.it`) con supporto SSO Microsoft / UniBo e persistenza sessione Moodle.
+- **Gestione Corsi & Cartelle**: Aggiungi insegnamenti inserendo semplicemente l'URL della pagina Virtuale o il relativo ID numerico. Scegli dove organizzare i materiali (es. `~/Desktop/UniBo`).
+- **Sincronizzazione Automatica & Incrementale**: Rileva nuovi file, dispense, slide ed esercizi senza riscaricare i documenti gia' presenti.
+- **Pianificatore Integrato (Scheduler)**: Imposta orari e frequenze di sincronizzazione (tutti i giorni, una sola volta o giorni selezionati) con notifiche macOS al termine.
+- **Tracciamento & Statistiche**: Monitora lo stato di ogni corso, la dimensione totale dei materiali scaricati e la data dell'ultimo controllo.
+
+---
+
+## Installazione & Requisiti
+
+### 1. Installazione dipendenze
+Assicurati di avere Python 3.9+ e installa i pacchetti necessari:
+
 ```bash
-pip install -e .
+pip install -r requirements.txt
+playwright install chromium
 ```
 
-Per verificare sia installato:
+### 2. Avvio dell'Applicazione
+Per avviare direttamente la GUI:
+
 ```bash
-which dlub
+python3 main.py
 ```
 
 ---
 
-## Istruzioni
+## Creazione del Bundle macOS (`UniBo Downloader.app`)
 
-Apri il terminale e digita:
-
-### 1. Inizializzazione Credenziali
-```bash
-dlub -init "tua.mail@studio.unibo.it" "tua_password"
-```
-
-### 2. Impostazione Cartella di Destinazione
+Il progetto include uno script per compilare e generare l'applicazione nativa macOS `.app` completa di launcher Mach-O, icona ufficiale ad alta risoluzione e permessi di sistema TCC (Desktop, Documenti, Download):
 
 ```bash
-dlub -dir "~/Desktop/UniBo" # A tua scelta
+python3 scripts/create_app_bundle.py
 ```
 
-### 3. Definizione Corsi
-Definisce un corso associando il suo nome e il link o ID di Virtuale (estrae e valida automaticamente l'ID numerico variabile):
-```bash
-dlub -def "Nome a scelta per corso" "Link pagina virtuale"
-
-# (Oppure solo l'ID numerico)
-dlub -def "Nome a scelta per corso" <ID>
-```
-
-
-
-### 4. Pianificazione Automatica
-
-Per esempio se volessi pianificare di scaricare il materiale relativo a `Fisica` per le `08:00` scrivi:
-```bash
-dlub -schedule "Fisica" "08:00"
-```
-
-## Comandi Extra
-
-### 4. Download diretto
-
-```bash
-# Tramite Nome associato
-dlub -get "Fisica Generale"
-
-# Tramite ID
-dlub -get 80238
-
-# Tramite URL diretto
-dlub -get "https://virtuale.unibo.it/course/view.php?id=80238"
-
-# Tutti i corsi registrati
-dlub -get all
-```
-
-### 6. Visualizza Lista Corsi 
-```bash
-dlub -list
-```
-
-### 7. Diagnostica
-```bash
-dlub -doctor
-```
-
+L'applicazione `UniBo Downloader.app` verra' generata e posizionata sia nella cartella del progetto che con collegamento sulla Scrivania.

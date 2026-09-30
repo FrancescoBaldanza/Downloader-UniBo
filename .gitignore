@@ -32,3 +32,6 @@ cron.log
 .vscode/
 *.swp
 *.swo
+
+# Notes
+notes/

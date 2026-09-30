@@ -3,8 +3,9 @@ import html
 import os
 import re
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import unquote, urlparse
+
 
 import requests
 from bs4 import BeautifulSoup
@@ -86,19 +87,68 @@ def parse_filename_from_response(response: requests.Response, fallback_title: st
 
 
 class VirtualeDownloader:
-    def __init__(self, db_path: Optional[str] = None, dry_run: bool = False):
+    def __init__(
+        self,
+        db_path: Optional[str] = None,
+        dry_run: bool = False,
+        progress_callback: Optional[Callable[[str, int, int], None]] = None,
+        status_callback: Optional[Callable[[str], None]] = None,
+    ):
         self.db = Database(db_path)
         self.dry_run = dry_run
+        self.progress_callback = progress_callback
+        self.status_callback = status_callback
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
 
     def init_session(self) -> bool:
+        if self.status_callback:
+            self.status_callback("Verifica sessione Virtuale UniBo...")
         cookie = ensure_valid_session(gui_fallback=True)
         if not cookie:
             print("[DOWNLOADER] [ERRORE] Impossibile stabilire una sessione Moodle valida.")
             return False
         self.session.cookies.set("MoodleSession", cookie, domain="virtuale.unibo.it")
         return True
+
+    @classmethod
+    def fetch_course_title(cls, course_id_or_url: str, session: Optional[requests.Session] = None) -> Optional[str]:
+        """
+        Recupera il nome predefinito del corso direttamente da Virtuale UniBo (es. 'Fisica Generale T').
+        """
+        cid = extract_moodle_course_id(str(course_id_or_url))
+        if not cid:
+            return None
+        url = f"https://virtuale.unibo.it/course/view.php?id={cid}"
+        sess = session or requests.Session()
+        sess.headers.update({"User-Agent": USER_AGENT})
+        if not session:
+            cookie = ensure_valid_session(gui_fallback=False)
+            if cookie:
+                sess.cookies.set("MoodleSession", cookie, domain="virtuale.unibo.it")
+        try:
+            r = sess.get(url, timeout=10)
+            if ("login" in r.url.lower() or "idp.unibo.it" in r.url.lower()) and not session:
+                cookie = ensure_valid_session(gui_fallback=True)
+                if cookie:
+                    sess.cookies.set("MoodleSession", cookie, domain="virtuale.unibo.it")
+                    r = sess.get(url, timeout=10)
+
+            if r.status_code == 200 and "idp.unibo.it" not in r.url.lower() and "login" not in r.url.lower():
+                soup = BeautifulSoup(r.text, "html.parser")
+                h1 = soup.select_one("header h1, .page-header-headings h1, h1.h2, h1")
+                if h1:
+                    title = h1.get_text(strip=True)
+                    if title and "javascript" not in title.lower():
+                        return clean_section_or_folder_title(title, fallback=title)
+                if soup.title and soup.title.string:
+                    title_str = soup.title.string.strip()
+                    m = re.search(r"Corso:\s*(.*?)\s*(?:\||\-)\s*Virtuale", title_str, re.IGNORECASE)
+                    if m:
+                        return clean_section_or_folder_title(m.group(1).strip(), fallback=m.group(1).strip())
+        except Exception as e:
+            print(f"[DOWNLOADER] Errore nel recupero del titolo del corso: {e}")
+        return None
 
     def scrape_course(self, course_id_or_url: str) -> Dict[str, Any]:
         cid_extracted = extract_moodle_course_id(str(course_id_or_url))
@@ -113,6 +163,8 @@ class VirtualeDownloader:
                 return {"success": False, "error": "Corso non trovato"}
 
         course_url = f"https://virtuale.unibo.it/course/view.php?id={course_id}"
+        if self.status_callback:
+            self.status_callback(f"Accesso alla pagina del corso...")
         print(f"\n============================================================")
         print(f"[DOWNLOADER] Scansione Corso ID {course_id}...")
         print(f"URL: {course_url}")
@@ -121,6 +173,8 @@ class VirtualeDownloader:
             r = self.session.get(course_url, timeout=30)
             if "login" in r.url.lower():
                 print("[DOWNLOADER] Sessione scaduta durante l'accesso al corso. Rinnovo...")
+                if self.status_callback:
+                    self.status_callback("Rinnovo sessione in corso...")
                 if not self.init_session():
                     return {"success": False, "error": "Autenticazione fallita"}
                 r = self.session.get(course_url, timeout=30)
@@ -131,12 +185,21 @@ class VirtualeDownloader:
 
         soup = BeautifulSoup(r.text, "html.parser")
 
-        h1 = soup.select_one("header h1, .page-header-headings h1, h1.h2, h1")
-        course_name = sanitize_filename(h1.get_text(strip=True)) if h1 else f"Corso_{course_id}"
+        # Se il corso è già presente nel db e ha un nome customizzato, preserviamolo
+        existing_course = self.db.get_course(course_id)
+        if existing_course and existing_course.get("course_name"):
+            course_name = existing_course["course_name"]
+        else:
+            h1 = soup.select_one("header h1, .page-header-headings h1, h1.h2, h1")
+            course_name = sanitize_filename(h1.get_text(strip=True)) if h1 else f"Corso_{course_id}"
+            self.db.upsert_course(course_id, course_name, course_url, subfolder=course_name)
 
-        self.db.upsert_course(course_id, course_name, course_url, subfolder=course_name)
+        if self.status_callback:
+            self.status_callback(f"Scansione materiali di {course_name}...")
+
         course_dir = self.db.get_course_folder(course_id, default_name=course_name)
         os.makedirs(course_dir, exist_ok=True)
+
 
         print(f"Nome Corso: {course_name}")
         print(f"Cartella File System: {course_dir}")
@@ -364,17 +427,30 @@ class VirtualeDownloader:
             filename = parse_filename_from_response(head_res, fallback_title=link_text)
             save_path = os.path.join(target_dir, filename)
 
+            content_length_str = head_res.headers.get("Content-Length", "")
+            total_expected = int(content_length_str) if content_length_str.isdigit() else 0
+
+            if self.status_callback:
+                if total_expected > 0:
+                    tot_mb = total_expected / (1024 * 1024)
+                    self.status_callback(f"Download: {filename} ({tot_mb:.1f} MB)")
+                else:
+                    self.status_callback(f"Download: {filename}")
+
             hasher = hashlib.sha256()
             total_bytes = 0
             with open(save_path, "wb") as f:
-                for chunk in head_res.iter_content(chunk_size=65536):
+                for chunk in head_res.iter_content(chunk_size=32768):
                     if chunk:
                         f.write(chunk)
                         hasher.update(chunk)
                         total_bytes += len(chunk)
+                        if self.progress_callback:
+                            self.progress_callback(filename, total_bytes, total_expected)
 
             hash_hex = hasher.hexdigest()
             file_ext = os.path.splitext(filename)[1].lower() or ".bin"
+
 
             if folder_name:
                 professor_path = f"{course_name} / {section_name} / {folder_name} / {filename}"
@@ -411,7 +487,7 @@ class VirtualeDownloader:
 
         db_courses = self.db.get_courses()
         if not db_courses:
-            print("[DOWNLOADER] [AVVISO] Nessun corso configurato. Usa: dlub -def <Nome> <ID o URL>")
+            print("[DOWNLOADER] [AVVISO] Nessun corso configurato nell'applicazione.")
             return
 
         print(f"\n[DOWNLOADER] Avvio sincronizzazione per {len(db_courses)} corsi...")

@@ -1,4 +1,4 @@
 core
-dlub
+gui
 integrations
 main

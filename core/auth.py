@@ -161,7 +161,7 @@ def get_fresh_moodle_session(headless: bool = True) -> str:
     password = os.getenv("UNIBO_PASSWORD", "").strip()
 
     if not email or not password:
-        print("[AUTH] Credenziali UniBo mancanti. Inseriscile con: dlub -init <EMAIL> <PASSWORD>")
+        print("[AUTH] Credenziali UniBo mancanti. Inseriscile nell'interfaccia grafica.")
         return ""
 
     os.makedirs(BROWSER_PROFILE_DIR, exist_ok=True)
